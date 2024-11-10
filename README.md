@@ -43,7 +43,7 @@ RABBITMQ_PASSWORD=password
 RABBITMQ_PORT=5672
 RABBITMQ_URL=amqp://user:password@localhost:5672
 
-You can use .env.example as a refrence
+You can use .env.example as a reference
 
 - Install all the dependancies by running the `npm install`
 - install postgre, redis and rabbitmq by running `docker compose up`
