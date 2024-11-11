@@ -5,7 +5,7 @@ import { Repository } from 'typeorm';
 import { v4 as uuidv4 } from 'uuid';
 import { firstValueFrom } from 'rxjs';
 import { LegoBoxComponentUpdateJobLog } from '../../entities/legobox-component-update-job-log.entity';
-import { SingleComponentImport } from '../../dtos/single-componet-import.dto';
+import { BatchBoxDto } from 'src/lego-box/dtos/batch-import.dto';
 
 @Injectable()
 export class BatchComponentUpdateProducer {
@@ -15,14 +15,12 @@ export class BatchComponentUpdateProducer {
     private legoBoxComponentUpdateJobLog: Repository<LegoBoxComponentUpdateJobLog>,
   ) {}
 
-  async queueBatchImport(
-    singleComponentImport: SingleComponentImport,
-  ): Promise<void> {
+  async queueBatchImport(box: BatchBoxDto): Promise<void> {
     const batchId = uuidv4();
     try {
       const importLog = this.legoBoxComponentUpdateJobLog.create({
         batch_id: batchId,
-        payload: singleComponentImport,
+        payload: box,
         status: 'pending',
       });
       await this.legoBoxComponentUpdateJobLog.save(importLog);
@@ -31,7 +29,7 @@ export class BatchComponentUpdateProducer {
       await firstValueFrom(
         this.client.emit('batch_lego_box_component_update', {
           batchId,
-          data: singleComponentImport,
+          data: box,
         }),
       );
       return batchId;

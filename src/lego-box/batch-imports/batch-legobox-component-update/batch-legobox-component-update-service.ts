@@ -4,9 +4,14 @@ import { LegoBox } from '../../entities/lego-box.entity';
 import { ComponentNotFoundException } from 'src/common/exceptions/custom-exceptions';
 import { LegoPiece } from 'src/lego-box/entities/lego-piece.entity';
 import { LegoBoxComponent } from '../../entities/lego-box-component.entity';
-import { SingleComponentImport } from 'src/lego-box/dtos/single-componet-import.dto';
 import { BatchLegoBoxPriceUpdateProducer } from '../lego-box-price-batch-update/batch-price-update-producer';
 import { LegoBoxService } from 'src/lego-box/lego-box.service';
+import {
+  BatchBoxDto,
+  BatchComponentDto,
+} from 'src/lego-box/dtos/batch-import.dto';
+import { Transaction } from 'src/lego-box/entities/transaction.entity';
+import { TransactionBox } from 'src/lego-box/entities/transaction-box.entity';
 
 @Injectable()
 export class BatchLegoBoxComponentUpdateService {
@@ -18,51 +23,43 @@ export class BatchLegoBoxComponentUpdateService {
   ) {}
 
   async processData(
-    singleComponentImport: SingleComponentImport,
+    boxImport: BatchBoxDto,
     queryRunner: QueryRunner,
   ): Promise<void> {
     try {
-      this.logger.debug(
-        `Processing component for box: ${singleComponentImport.name}`,
-      );
+      this.logger.debug(`Processing component for box: ${boxImport.name}`);
 
       // Find or create lego box
       let legoBox = await queryRunner.manager.findOne(LegoBox, {
-        where: { name: singleComponentImport.name },
+        where: { name: boxImport.name },
       });
 
       if (!legoBox) {
-        this.logger.debug(`Creating new box: ${singleComponentImport.name}`);
+        this.logger.debug(`Creating new box: ${boxImport.name}`);
         legoBox = queryRunner.manager.create(LegoBox, {
-          name: singleComponentImport.name,
+          name: boxImport.name,
           price: 0,
         });
         legoBox = await queryRunner.manager.save(LegoBox, legoBox);
       }
 
       if (!legoBox.id) {
-        throw new Error(
-          `Failed to create/find box: ${singleComponentImport.name}`,
-        );
+        throw new Error(`Failed to create/find box: ${boxImport.name}`);
       }
 
-      // Process based on component type
-      if (singleComponentImport.component_type === 'piece') {
-        await this.processPieceComponent(
-          queryRunner,
-          legoBox,
-          singleComponentImport,
-        );
-      } else {
-        await this.processBoxComponent(
-          queryRunner,
-          legoBox,
-          singleComponentImport,
-        );
+      for (const component of boxImport.components) {
+        // Process based on component type
+        if (component.component_type === 'piece') {
+          await this.processPieceComponent(queryRunner, legoBox, component);
+        } else {
+          await this.processBoxComponent(queryRunner, legoBox, component);
+        }
       }
+
       const newBox = await queryRunner.manager.findOne(LegoBox, {
         where: { id: legoBox.id },
       });
+      this.updateTransaction(queryRunner, newBox, boxImport.amount);
       await this.batchLegoBoxPriceUpdateProducer.queueBatchImport(newBox);
       this.legoBoxService.invalidateTransactionHistoryCache(newBox.id);
     } catch (err) {
@@ -74,7 +71,7 @@ export class BatchLegoBoxComponentUpdateService {
   private async processPieceComponent(
     queryRunner: QueryRunner,
     legoBox: LegoBox,
-    singleComponentImport: SingleComponentImport,
+    singleComponentImport: BatchComponentDto,
   ): Promise<void> {
     this.logger.debug(
       `Processing piece component ${singleComponentImport.component_id} for box ${legoBox.name}`,
@@ -108,7 +105,7 @@ export class BatchLegoBoxComponentUpdateService {
   private async processBoxComponent(
     queryRunner: QueryRunner,
     legoBox: LegoBox,
-    singleComponentImport: SingleComponentImport,
+    singleComponentImport: BatchComponentDto,
   ): Promise<void> {
     this.logger.debug(
       `Processing box component ${singleComponentImport.component_id} for box ${legoBox.name}`,
@@ -155,5 +152,52 @@ export class BatchLegoBoxComponentUpdateService {
       { id: legoBox.id },
       { price: Number(updatedPrice.toFixed(2)) },
     );
+  }
+
+  private async updateTransaction(
+    queryRunner: QueryRunner,
+    legoBox: LegoBox,
+    amount: number,
+  ): Promise<void> {
+    let transaction: Transaction;
+    const transactionBox = await queryRunner.manager.findOne(TransactionBox, {
+      where: { lego_box_id: legoBox.id },
+    });
+
+    if (!transactionBox) {
+      // Create new transaction
+      transaction = await queryRunner.manager.save(Transaction, {
+        total_price: Number((legoBox.price * amount).toFixed(2)),
+      });
+
+      await queryRunner.manager.save(TransactionBox, {
+        transaction_id: transaction.id,
+        lego_box_id: legoBox.id,
+        amount,
+      });
+    } else {
+      // Update existing transaction
+      transaction = await queryRunner.manager.findOne(Transaction, {
+        where: { id: transactionBox.transaction_id },
+      });
+
+      if (!transaction) {
+        throw new Error('Transaction not found');
+      }
+
+      transaction.total_price = Number(
+        (
+          Number(legoBox.price * amount) + Number(transaction.total_price)
+        ).toFixed(2),
+      );
+
+      await queryRunner.manager.save(transaction);
+
+      await queryRunner.manager.save(TransactionBox, {
+        transaction_id: transaction.id,
+        lego_box_id: legoBox.id,
+        amount,
+      });
+    }
   }
 }

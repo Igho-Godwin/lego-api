@@ -5,11 +5,11 @@ import { InjectRepository } from '@nestjs/typeorm';
 import { Repository, DataSource, QueryRunner } from 'typeorm';
 import { LegoBoxComponentUpdateJobLog } from '../../entities/legobox-component-update-job-log.entity';
 import { BatchLegoBoxComponentUpdateService } from './batch-legobox-component-update-service';
-import { SingleComponentImport } from 'src/lego-box/dtos/single-componet-import.dto';
+import { BatchBoxDto } from 'src/lego-box/dtos/batch-import.dto';
 
 interface JobData {
   batchId: string;
-  data: SingleComponentImport;
+  data: BatchBoxDto;
 }
 
 type JobStatus = 'pending' | 'processing' | 'completed' | 'failed';

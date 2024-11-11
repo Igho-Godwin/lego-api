@@ -13,7 +13,11 @@ import { Transaction } from './entities/transaction.entity';
 import { TransactionBox } from './entities/transaction-box.entity';
 import { CreateLegoBoxDto } from './dtos/create-lego-box.dto';
 import { AddComponentsDto } from './dtos/add-components.dto';
-import { BatchComponentDto, BatchImportDto } from './dtos/batch-import.dto';
+import {
+  BatchBoxDto,
+  BatchComponentDto,
+  BatchImportDto,
+} from './dtos/batch-import.dto';
 import {
   ComponentNotFoundException,
   DuplicateBoxNameException,
@@ -24,7 +28,6 @@ import { CreateTransactionBoxDto } from './dtos/create-transaction-box.dto';
 
 import { BatchComponentUpdateProducer } from './batch-imports/batch-legobox-component-update/batch-component-update-producer';
 import { BatchLegoBoxPriceUpdateProducer } from './batch-imports/lego-box-price-batch-update/batch-price-update-producer';
-import { SingleComponentImport } from './dtos/single-componet-import.dto';
 import { BatchImportResponseDto } from './dtos/batch-import-response.dto';
 
 @Injectable()
@@ -185,26 +188,13 @@ export class LegoBoxService {
       }
     }
     for (const box of boxes) {
-      for (const component of box.components) {
-        for (let i = 0; i < box.amount; i++) {
-          this.queueComponent(box.name, component);
-        }
-      }
+      this.queueComponent(box);
     }
     return { message: 'Batch Queuing Successful' };
   }
 
-  private async queueComponent(
-    boxName: string,
-    component: BatchComponentDto,
-  ): Promise<void> {
-    const componentImport: SingleComponentImport = {
-      name: boxName,
-      component_id: component.component_id,
-      component_type: component.component_type,
-    };
-
-    await this.batchComponentUpdateProducer.queueBatchImport(componentImport);
+  private async queueComponent(box: BatchBoxDto): Promise<void> {
+    await this.batchComponentUpdateProducer.queueBatchImport(box);
   }
 
   async validateBoxComponent(
